@@ -52,6 +52,14 @@ SW 休眠/被杀可恢复、仅浏览器完全关闭才清空——正好满足"
 已落 session 的状态：对话（conversation.js）、RunState（每步 checkpoint）、token 统计、
 事件日志缓冲。内存态仅剩无碍项（站点包缓存可重载、port 引用、AbortController）。
 
+**对话历史归档（2026-09-05 新增）**：点"新对话"时当前对话自动归档到
+`storage.local.conversationArchive`（上限 20 条，含消息 steps）；侧边栏"🕘 历史"
+可查看/重新载入/删除。载入历史即替换当前活跃对话，下一条用户消息以它为上下文续聊。
+页面刷新/变化不影响续聊：每轮观察、标签页快照、元素编号均实时重建，旧对话只提供
+语义上下文（旧页面引用失效时模型依据新快照自行导航）。
+**thought 持久化**：每步 thought/action/result 存进消息的 steps 字段（不进 LLM 上下文），
+重开对话时渲染为可折叠"执行过程"时间线。
+
 **SW 存活保证（2026-09-05 加固）**：等待型 await（ask_user 等回答、sleep、长 LLM 响应）
 不算 SW 活动，30s 空闲即被 Chrome 回收、任务死在中途。对策：运行期间创建
 `agent-watchdog` 周期闹钟（30s）——闹钟事件既重置空闲计时保活，又能在 SW 已被杀时
@@ -215,3 +223,5 @@ Planner/Executor 双 Agent / 多会话管理 / 执行中插话改向（仅停止
 11. SW 休眠回收会清空内存事件缓冲 → 缓冲镜像到 storage.session（防抖写入、超长字段截断），重启恢复；goto 用 background `chrome.tabs.update` 实现，不依赖 content script（主页等不可注入页面也能跳转）
 12. 模型会自主 switch_tab 复用其他窗口已打开的标签页（设计能力 + 模型决策）→ prompt 规则 9 要求主动说明操作页面
 13. **goto 直链策略不可泛化**（Google Scholar 实测 2026-09-05）：构造查询 URL 先撞登录墙再触发反爬，改用 API 又限流 → 通用策略=模拟真实用户（输入+点按钮），直链只进站点知识包（WORKFLOW §5）；非浏览器手段须 ask_user 请示
+14. DOM 提取需穿透 open shadow root（B站 bili-comments 等 web component 内链接不穿透会漏抓）；`document.contains` 对 shadow 元素不可靠，存活检查用 `isConnected`；iframe 不穿透（坐标系/跨域）
+15. 侧边栏 `hidden` 属性会被自定义 `display:flex` 覆盖 → 需显式 `#debugPanel[hidden]{display:none}`

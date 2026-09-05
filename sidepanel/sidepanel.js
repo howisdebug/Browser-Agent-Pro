@@ -257,6 +257,8 @@ async function restoreState() {
   const { messages, running: isRunning, run } = resp.state;
   chatEl.innerHTML = '';
   for (const m of messages) {
+    // 带执行过程记录的消息：先渲染可折叠的 thought/动作时间线，再渲染消息本体
+    if (m.role === 'agent' && m.steps?.length) appendProgressHistory(m.steps);
     appendBubble(m.role, m.text, m.role === 'agent' ? 'done' : undefined);
   }
   if (isRunning) {
@@ -266,6 +268,22 @@ async function restoreState() {
   } else {
     setRunning(false);
   }
+}
+
+// 重开对话时渲染历史执行过程（thought 持久化：问题 2 修复）
+function appendProgressHistory(steps) {
+  const details = el('details', 'progress-history');
+  details.appendChild(el('summary', '', `执行过程（${steps.length} 步，点击展开）`));
+  for (const s of steps) {
+    if (s.thought) details.appendChild(el('div', 'ph-thought', `💭 ${s.thought}`));
+    details.appendChild(el('div', 'ph-action', `⚡ ${JSON.stringify(s.action)}`));
+    if (s.detail) {
+      details.appendChild(
+        el('div', s.ok ? 'ph-ok' : 'ph-err', `${s.ok ? '✓' : '✗'} ${String(s.detail).slice(0, 120)}`)
+      );
+    }
+  }
+  chatEl.appendChild(details);
 }
 
 // ---------- port 发送（SW 休眠导致 port 断开时重连重发一次） ----------
@@ -302,14 +320,74 @@ stopBtn.addEventListener('click', () => {
   runStateEl.textContent = '正在停止…';
 });
 document.getElementById('newConvBtn').addEventListener('click', () => {
-  // 先本地立即清屏给反馈，再通知 background 清存储
+  // 先本地立即清屏给反馈，再通知 background 归档旧对话并清存储
   chatEl.innerHTML = '';
   progressEl = null;
   currentRoundEl = null;
   setRunning(false);
   setStep(0);
-  chatEl.appendChild(el('div', 'notice', '已开始新对话'));
+  chatEl.appendChild(el('div', 'notice', '已开始新对话（旧对话已存入历史）'));
   postToBackground({ type: 'NEW_CONVERSATION' });
+});
+
+// ---------- 历史对话 ----------
+
+const historyPanel = document.getElementById('historyPanel');
+
+function formatHistoryTime(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+}
+
+async function renderHistoryList() {
+  historyPanel.innerHTML = '';
+  const resp = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
+  const list = resp?.ok ? resp.list : [];
+  if (!list.length) {
+    historyPanel.appendChild(el('div', 'history-empty', '暂无历史对话（点「新对话」时自动归档）'));
+    return;
+  }
+  for (const item of list) {
+    const row = el('div', 'history-item');
+    row.title = item.title;
+    row.appendChild(el('span', 'h-title', item.title));
+    row.appendChild(el('span', 'h-meta', `${formatHistoryTime(item.startedAt)} · ${item.messageCount}条`));
+    const del = el('button', 'h-del', '×');
+    del.title = '删除该历史';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await chrome.runtime.sendMessage({ type: 'DELETE_HISTORY', id: item.id });
+      renderHistoryList();
+    });
+    row.appendChild(del);
+    row.addEventListener('click', async () => {
+      const loadResp = await chrome.runtime.sendMessage({ type: 'LOAD_HISTORY', id: item.id });
+      if (!loadResp?.ok) {
+        chatEl.appendChild(el('div', 'notice', `载入失败：${loadResp?.error || '未知错误'}`));
+        return;
+      }
+      historyPanel.hidden = true;
+      await restoreState();
+      chatEl.appendChild(el('div', 'notice', `已载入历史对话「${loadResp.title}」，可直接继续提问`));
+      scrollToBottom();
+    });
+    historyPanel.appendChild(row);
+  }
+}
+
+document.getElementById('historyBtn').addEventListener('click', () => {
+  historyPanel.hidden = !historyPanel.hidden;
+  if (!historyPanel.hidden) renderHistoryList();
+});
+// 点击面板外区域收起
+document.addEventListener('click', (e) => {
+  if (!historyPanel.hidden && !historyPanel.contains(e.target) && e.target.id !== 'historyBtn') {
+    historyPanel.hidden = true;
+  }
 });
 
 // ---------- 调试面板 ----------

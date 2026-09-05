@@ -143,6 +143,68 @@ body {
 }
 .ask-box.answered { opacity: 0.55; border-color: #3b4261; }
 
+/* ---------- 历史对话 ---------- */
+#historyPanel {
+  position: absolute;
+  top: 42px;
+  right: 8px;
+  z-index: 100;
+  width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #1f2335;
+  border: 1px solid #3b4261;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  padding: 6px;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.history-item:hover { background: #2a2e42; }
+.history-item .h-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.history-item .h-meta { font-size: 11px; color: #565f89; flex: none; }
+.history-item .h-del {
+  flex: none;
+  background: none;
+  border: none;
+  color: #565f89;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+}
+.history-item .h-del:hover { color: #f7768e; }
+.history-empty { padding: 12px; text-align: center; color: #565f89; font-size: 12px; }
+
+/* ---------- 重开对话时的历史执行过程 ---------- */
+.progress-history {
+  border-left: 2px solid #3b4261;
+  margin-left: 6px;
+  padding-left: 10px;
+  font-size: 12px;
+}
+.progress-history summary {
+  color: #565f89;
+  cursor: pointer;
+  user-select: none;
+}
+.progress-history[open] summary { margin-bottom: 6px; }
+.progress-history .ph-thought { color: #a9b1d6; margin: 3px 0; }
+.progress-history .ph-action { color: #e0af68; font-family: Consolas, monospace; font-size: 11px; word-break: break-all; }
+.progress-history .ph-ok { color: #9ece6a; }
+.progress-history .ph-err { color: #f7768e; }
+
 #inputRow {
   display: flex;
   gap: 8px;
@@ -184,6 +246,8 @@ body {
   flex-direction: column;
   gap: 8px;
 }
+/* hidden 属性必须赢过上面的 display:flex，否则开发者模式关不掉 */
+#debugPanel[hidden] { display: none; }
 .debug-head {
   display: flex;
   justify-content: space-between;

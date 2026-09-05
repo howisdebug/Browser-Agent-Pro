@@ -65,10 +65,20 @@
   // 单次遍历收集：原生交互元素 ∪ 最外层 cursor:pointer 元素
   // （B 站搜索按钮是 div + React onClick，不匹配任何交互选择器，只能靠 pointer 捕获；
   //   只保留最外层是因为 cursor 会继承，div>svg>path 三层都是 pointer，不收敛会刷屏）
+  // 递归穿透 open shadow root（B 站 bili-comments 等 web component 里的
+  // 链接/按钮在 shadow 树中，不穿透会漏抓）；closed shadow 无法访问，iframe 不穿透
+  // （跨 frame 坐标系不同且跨域受限）。
+  function* iterateAllElements(root) {
+    for (const el of root.querySelectorAll('*')) {
+      yield el;
+      if (el.shadowRoot) yield* iterateAllElements(el.shadowRoot);
+    }
+  }
+
   function collectElements() {
     const interactive = new Set();
     const pointer = new Set();
-    for (const el of document.querySelectorAll('body *')) {
+    for (const el of iterateAllElements(document.body)) {
       if (el.hasAttribute('data-bap-bubble')) continue; // 自家飘窗/探针，永不进清单
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
@@ -115,7 +125,8 @@
   function getElement(id) {
     const el = currentElements[id - 1];
     if (!el) throw new Error(`编号 ${id} 不存在（当前共 ${currentElements.length} 个元素，请先提取）`);
-    if (!document.contains(el)) throw new Error(`编号 ${id} 的元素已从页面消失，请重新提取`);
+    // isConnected 对 shadow DOM 内元素也返回 true（document.contains 不可靠）
+    if (!el.isConnected) throw new Error(`编号 ${id} 的元素已从页面消失，请重新提取`);
     return el;
   }
 

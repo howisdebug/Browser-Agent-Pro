@@ -8,10 +8,13 @@
   <header id="appHeader">
     <span class="logo">🤖 Browser Agent Pro</span>
     <span class="header-actions">
-      <button id="newConvBtn" title="新对话（清空当前对话）">✚ 新对话</button>
+      <button id="historyBtn" title="历史对话">🕘 历史</button>
+      <button id="newConvBtn" title="新对话（当前对话自动存入历史）">✚ 新对话</button>
       <button id="openOptions" title="设置">⚙</button>
     </span>
   </header>
+
+  <div id="historyPanel" hidden></div>
 
   <div id="statusBar">
     <span id="runState">空闲</span>

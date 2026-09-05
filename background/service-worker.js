@@ -20,8 +20,9 @@ import {
   requestStop,
   getState,
   recoverInterruptedRun,
+  isRunning,
 } from './agent-loop.js';
-import { clearConversation } from './conversation.js';
+import { clearConversation, archiveCurrentConversation, getArchiveList, loadArchivedConversation, deleteArchivedConversation } from './conversation.js';
 import { initBubble, setPanelOpen, registerPetPort, getBubbleTabId } from './bubble.js';
 
 initLogLevel().then(() => logWork('info', 'sw', 'service worker 已启动'));
@@ -92,7 +93,9 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type === 'NEW_CONVERSATION') {
       requestStop();
       clearEventLog(); // 防止重连回放把旧对话事件灌回新对话
-      clearConversation()
+      archiveCurrentConversation() // 旧对话归档到历史（可经历史入口重新载入）
+        .catch((err) => logWork('warn', 'conversation', '归档旧对话失败', { error: err.message }))
+        .then(() => clearConversation())
         .then(() => emitEvent({ kind: 'conversation_cleared' }))
         .catch((err) => logWork('error', 'conversation', '清空对话失败', { error: err.message }));
       return;
@@ -116,6 +119,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'GET_STATE') {
     getState()
       .then((state) => sendResponse({ ok: true, state }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  // ---------- 历史对话 ----------
+  if (msg.type === 'GET_HISTORY') {
+    getArchiveList()
+      .then((list) => sendResponse({ ok: true, list }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (msg.type === 'LOAD_HISTORY') {
+    (async () => {
+      if (isRunning()) {
+        throw new Error('任务执行中，请先停止再载入历史对话');
+      }
+      await clearEventLog();
+      return loadArchivedConversation(msg.id);
+    })()
+      .then((entry) => sendResponse({ ok: true, title: entry.title }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (msg.type === 'DELETE_HISTORY') {
+    deleteArchivedConversation(msg.id)
+      .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }

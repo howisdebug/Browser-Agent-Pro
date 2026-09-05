@@ -239,7 +239,16 @@ async function decide(userMessage) {
 async function finishRun(status, agentText) {
   const bubbleTabId = run?.tabId;
   if (agentText) {
-    await appendMessage('agent', agentText);
+    // 本回合执行过程随消息持久化：重开对话时 UI 可渲染完整 thought/动作时间线
+    const steps = run?.history?.length
+      ? run.history.map((h) => ({
+          thought: h.thought || '',
+          action: h.action,
+          ok: h.ok,
+          detail: h.detail,
+        }))
+      : null;
+    await appendMessage('agent', agentText, steps);
     emitEvent({ kind: 'agent_message', text: agentText, status });
   }
   emitEvent({ kind: 'run_end', status, step: run?.step ?? 0 });
@@ -336,7 +345,7 @@ async function runLoop() {
     if (action.type === 'ask_user') {
       const question = String(action.question || '').trim();
       if (!question) {
-        run.history.push({ step: run.step, action, ok: false, detail: 'ask_user 需要非空 question' });
+        run.history.push({ step: run.step, action, ok: false, detail: 'ask_user 需要非空 question', thought: parsed.thought });
         continue;
       }
       const askId = `ask-${Date.now()}-${run.step}`;
@@ -354,7 +363,7 @@ async function runLoop() {
       run.pendingAsk = null;
       await appendMessage('user', answer);
       emitEvent({ kind: 'user_message', text: answer });
-      run.history.push({ step: run.step, action, ok: true, detail: `用户回答：${answer.slice(0, 200)}` });
+      run.history.push({ step: run.step, action, ok: true, detail: `用户回答：${answer.slice(0, 200)}`, thought: parsed.thought });
       await checkpoint();
       continue; // 页面未变，用现有观察直接进入下一轮
     }
@@ -363,14 +372,14 @@ async function runLoop() {
         ? action.steps.map((s) => String(s)).filter(Boolean).slice(0, 8)
         : [];
       if (!steps.length) {
-        run.history.push({ step: run.step, action, ok: false, detail: 'plan 需要非空 steps 数组' });
+        run.history.push({ step: run.step, action, ok: false, detail: 'plan 需要非空 steps 数组', thought: parsed.thought });
         continue;
       }
       run.plan = steps;
       const planText = `计划：\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n开始执行，如需调整请随时叫停。`;
       await appendMessage('agent', planText);
       emitEvent({ kind: 'agent_message', text: planText, status: 'plan' });
-      run.history.push({ step: run.step, action, ok: true, detail: `已输出 ${steps.length} 步计划` });
+      run.history.push({ step: run.step, action, ok: true, detail: `已输出 ${steps.length} 步计划`, thought: parsed.thought });
       await checkpoint();
       continue;
     }
@@ -412,6 +421,7 @@ async function runLoop() {
       action,
       ok: execOk,
       detail: execDetail.slice(0, HISTORY_DETAIL_MAX),
+      thought: parsed.thought,
     });
     emitEvent({ kind: 'result', ok: execOk, text: execDetail, step: run.step });
 
