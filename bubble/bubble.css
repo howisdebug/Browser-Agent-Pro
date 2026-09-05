@@ -1,0 +1,37 @@
+/* bubble/bubble.css — 桌宠小窗（窄长条、深色、可随状态变色） */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; }
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  display: flex;
+  align-items: stretch;
+}
+.pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  background: #1f2335;
+  color: #c0caf5;
+  border: 1px solid #7aa2f7;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+}
+.pill:hover { background: #24283b; }
+.pill.running { border-color: #7aa2f7; }
+.pill.waiting { border-color: #e0af68; }
+.pill.done { border-color: #9ece6a; }
+.pill.failed, .pill.stopped { border-color: #f7768e; }
+.pill.idle { border-color: #3b4261; color: #7982a9; }
+.icon { flex: none; font-size: 15px; }
+.text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pill.running .icon { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }

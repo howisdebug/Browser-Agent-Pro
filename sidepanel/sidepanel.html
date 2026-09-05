@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header id="appHeader">
+    <span class="logo">🤖 Browser Agent Pro</span>
+    <span class="header-actions">
+      <button id="newConvBtn" title="新对话（清空当前对话）">✚ 新对话</button>
+      <button id="openOptions" title="设置">⚙</button>
+    </span>
+  </header>
+
+  <div id="statusBar">
+    <span id="runState">空闲</span>
+    <span class="spacer"></span>
+    <span id="stepCount">步数 0</span>
+    <span id="tokenStats" title="累计 token（输入/输出/总计）">tok 0/0/0</span>
+  </div>
+
+  <main id="chat"></main>
+
+  <div id="inputRow">
+    <textarea id="userInput" rows="2" placeholder="告诉我你想做什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+    <button id="sendBtn">发送</button>
+    <button id="stopBtn" hidden>停止</button>
+  </div>
+
+  <!-- 调试面板：开发者模式（设置页开关）控制显隐 -->
+  <section id="debugPanel" hidden>
+    <div class="debug-head">
+      <span>🛠 调试面板</span>
+      <button id="exportLogBtn">导出日志</button>
+    </div>
+    <div class="debug-actions">
+      <button id="testConnBtn">连接测试</button>
+    </div>
+    <div class="debug-unittests">
+      <div class="ut-row">
+        <button id="utExtract">提取元素</button>
+        <input id="utElId" type="number" min="1" placeholder="编号" title="元素编号">
+        <button id="utClick">点击</button>
+        <input id="utInputText" type="text" placeholder="输入文本">
+        <button id="utInput">输入</button>
+      </div>
+      <div class="ut-row">
+        <input id="utGotoUrl" type="text" placeholder="https://…">
+        <button id="utGoto">goto</button>
+        <button id="utScrollDown">滚动↓</button>
+      </div>
+      <div class="ut-row">
+        <input id="utReadId" type="text" placeholder="read 目标(main/编号)" value="main">
+        <input id="utReadOffset" type="number" min="0" placeholder="offset" value="0">
+        <button id="utRead">read</button>
+      </div>
+      <div class="ut-row">
+        <input id="utLookTarget" type="text" placeholder="look 目标(viewport/编号)" value="viewport">
+        <input id="utLookQuestion" type="text" placeholder="问题">
+        <button id="utLook">look</button>
+      </div>
+      <div class="ut-row">
+        <button id="utProbe">🧪 手势透传探针（注入页面按钮）</button>
+      </div>
+      <div id="utLookResult" hidden>
+        <img id="utLookShot" alt="look 截图">
+        <div id="utLookReply"></div>
+      </div>
+    </div>
+    <pre id="debugLog">（调试输出）</pre>
+  </section>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

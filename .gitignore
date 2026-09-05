@@ -1,0 +1,6 @@
+# 导出的调试日志（含脱敏后的事件记录，不入库）
+browser-agent-pro-log-*.json
+
+node_modules/
+.DS_Store
+Thumbs.db

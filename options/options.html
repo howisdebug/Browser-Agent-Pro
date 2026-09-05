@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Browser Agent Pro 设置</title>
+  <style>
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #1a1b26;
+      color: #c0caf5;
+      max-width: 560px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 { font-size: 20px; color: #7aa2f7; }
+    .field { margin: 18px 0; }
+    label { display: block; margin-bottom: 6px; font-size: 13px; color: #a9b1d6; }
+    input[type="text"], input[type="password"], input[type="url"], select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid #3b4261;
+      border-radius: 6px;
+      background: #24283b;
+      color: #c0caf5;
+      font-size: 14px;
+    }
+    input:focus { outline: none; border-color: #7aa2f7; }
+    .hint { font-size: 12px; color: #565f89; margin-top: 4px; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; }
+    .checkbox-row label { margin: 0; }
+    button {
+      padding: 9px 22px;
+      border: none;
+      border-radius: 6px;
+      background: #7aa2f7;
+      color: #1a1b26;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #89b4fa; }
+    #status { margin-top: 12px; font-size: 13px; color: #9ece6a; }
+  </style>
+</head>
+<body>
+  <h1>Browser Agent Pro 设置</h1>
+
+  <div class="field">
+    <label for="apiKey">API Key</label>
+    <input type="password" id="apiKey" placeholder="sk-...">
+    <div class="hint">仅存于本浏览器 chrome.storage.local，不会写入任何日志。</div>
+  </div>
+
+  <div class="field">
+    <label for="modelApiUrl">模型 API URL（OpenAI 兼容 Chat Completions）</label>
+    <input type="url" id="modelApiUrl" placeholder="https://api.moonshot.cn/v1/chat/completions">
+  </div>
+
+  <div class="field">
+    <label for="modelName">模型名称</label>
+    <input type="text" id="modelName" placeholder="kimi-k3">
+    <div class="hint">kimi-k3 的 temperature 固定为 1（API 硬要求）。</div>
+  </div>
+
+  <div class="field checkbox-row">
+    <input type="checkbox" id="devMode">
+    <label for="devMode">开发者模式（侧边栏显示调试面板：单测区 / 日志导出 / token 统计）</label>
+  </div>
+
+  <div class="field">
+    <label for="petMode">状态桌宠（独立小窗，跟随 Agent 显示状态，点击唤出侧边栏）</label>
+    <select id="petMode">
+      <option value="run">任务运行时显示（默认）</option>
+      <option value="always">常驻显示</option>
+      <option value="off">关闭</option>
+    </select>
+  </div>
+
+  <div class="field checkbox-row">
+    <input type="checkbox" id="bubbleEnabled">
+    <label for="bubbleEnabled">页内状态飘窗（旧方案：气泡注入到 Agent 操作的页面上。不可注入页面如浏览器主页无法显示，默认关）</label>
+  </div>
+
+  <button id="saveBtn">保存</button>
+  <div id="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

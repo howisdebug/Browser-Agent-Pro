@@ -1,0 +1,9 @@
+{
+  "name": "哔哩哔哩",
+  "hosts": ["bilibili.com"],
+  "prompt": "B站操作要点：\n1. 搜索（本站的可靠直链特例，通用规则见系统提示）：可以直接 goto 搜索结果页 https://search.bilibili.com/all?keyword=<URL编码关键词>——B站此直链长期稳定；也可以在搜索框 input_text 输入后**点击搜索按钮**（回车无效，合成键盘事件会被忽略）。\n2. UP主空间：https://space.bilibili.com/<mid>/video 可见该UP主视频列表（默认按时间倒序，最上面是最新视频）。\n3. 视频页 URL 规律：https://www.bilibili.com/video/BVxxxx。判断“UP主为xxx”要看视频卡片/视频页上的UP主名称，不要只看标题。\n4. 评论区：视频页面向下滚动才会加载，容器是 bili-comments（shadow DOM）或 #comment 区域。用 read（id 或 selector \"bili-comments\"）读取评论正文；热评在最前；读更多先 scroll 再 read（offset 续读）。\n5. 视频简介：视频标题下方区域，可用 read 读取。\n6. B站链接多为 target=_blank，点击后常打开新标签页：注意标签页快照变化，必要时 switch_tab 跟进。",
+  "selectors": {
+    "comments": "bili-comments, #comment",
+    "description": ".basic-desc-info, #v_desc"
+  }
+}
