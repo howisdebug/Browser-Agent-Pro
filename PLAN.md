@@ -227,3 +227,4 @@ Planner/Executor 双 Agent / 多会话管理 / 执行中插话改向（仅停止
 13. **goto 直链策略不可泛化**（Google Scholar 实测 2026-09-05）：构造查询 URL 先撞登录墙再触发反爬，改用 API 又限流 → 通用策略=模拟真实用户（输入+点按钮），直链只进站点知识包（WORKFLOW §5）；非浏览器手段须 ask_user 请示
 14. DOM 提取需穿透 open shadow root（B站 bili-comments 等 web component 内链接不穿透会漏抓）；`document.contains` 对 shadow 元素不可靠，存活检查用 `isConnected`；iframe 不穿透（坐标系/跨域）
 15. 侧边栏 `hidden` 属性会被自定义 `display:flex` 覆盖 → 需显式 `#debugPanel[hidden]{display:none}`
+16. 元素清单截断/收敛不当会造成"正文里看得到、清单里没编号"的假性缺失（2026-09-05 修复）：①按全局 top 排序再截断会把视口内控件挤出上限 → 改按离视口距离排序；②pointer"只留最外层"会把容器内真实可点项吞掉 → 改为图标层收敛进祖先、有文本的后代优先于容器；③截断必须显式告知模型（总数+提示 scroll），否则模型误判"没有可点击对象"；④`body.innerText` 不含 shadow DOM 文本 → pageText 用 deepInnerText

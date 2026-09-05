@@ -5,13 +5,17 @@
   if (window.__browserAgentProLoaded) return; // 防重复注入
   window.__browserAgentProLoaded = true;
 
-  const MAX_ELEMENTS = 120;
-  const MAX_PAGE_TEXT = 12000;
+  const MAX_ELEMENTS = 300;
+  const MAX_PAGE_TEXT = 20000;
   const TEXT_TRUNCATE = 30;
   const READ_DEFAULT_LIMIT = 3000;
   const READ_MAX_LIMIT = 5000;
   const INTERACTIVE_SELECTOR =
-    'a, button, input, select, textarea, [role="button"], [role="link"], [role="searchbox"], [onclick]';
+    'a, button, input, select, textarea, summary, [onclick], ' +
+    '[contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex^="-"]), ' +
+    '[role="button"], [role="link"], [role="searchbox"], [role="textbox"], [role="checkbox"], ' +
+    '[role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], ' +
+    '[role="menuitemradio"], [role="option"], [role="combobox"], [role="slider"], [role="spinbutton"], [role="treeitem"]';
 
   // 最近一次提取的元素引用，index = 编号 - 1
   let currentElements = [];
@@ -62,9 +66,8 @@
     return `[${id}] <${tag}> "${text}" ${extras.join(' ')}`.trim();
   }
 
-  // 单次遍历收集：原生交互元素 ∪ 最外层 cursor:pointer 元素
-  // （B 站搜索按钮是 div + React onClick，不匹配任何交互选择器，只能靠 pointer 捕获；
-  //   只保留最外层是因为 cursor 会继承，div>svg>path 三层都是 pointer，不收敛会刷屏）
+  // 单次遍历收集：原生/ARIA 交互元素 ∪ cursor:pointer 元素
+  // （B 站搜索按钮是 div + React onClick，不匹配任何交互选择器，只能靠 pointer 捕获）
   // 递归穿透 open shadow root（B 站 bili-comments 等 web component 里的
   // 链接/按钮在 shadow 树中，不穿透会漏抓）；closed shadow 无法访问，iframe 不穿透
   // （跨 frame 坐标系不同且跨域受限）。
@@ -88,36 +91,75 @@
       else if (style.cursor === 'pointer') pointer.add(el);
     }
     const result = new Set(interactive);
+    // pointer 收敛（旧规则"只留最外层"会把容器内真实可点项整个吞掉——
+    // 用户看得见菜单项，清单里只剩一个大容器，即"能看到却没有可点击对象"）：
+    // - 无文本图标层（svg>path 每层都是 pointer）收敛进有文本的 pointer 祖先，防刷屏
+    // - 有文本的 pointer 容器若其 pointer 后代也有文本，跳过容器保后代
+    //   （点后代事件会冒泡到容器处理器，功能等价；保留后代模型才能点到具体项）
+    const pointerHasText = new Map();
+    for (const el of pointer) pointerHasText.set(el, Boolean(elementText(el)));
+    const coveredByDescendant = new Set();
     for (const el of pointer) {
-      let outermost = el;
-      while (outermost.parentElement && pointer.has(outermost.parentElement)) {
-        outermost = outermost.parentElement;
+      if (!pointerHasText.get(el)) continue;
+      let p = el.parentElement;
+      while (p) {
+        if (pointer.has(p)) coveredByDescendant.add(p);
+        p = p.parentElement;
       }
-      result.add(outermost);
+    }
+    for (const el of pointer) {
+      if (coveredByDescendant.has(el)) continue;
+      if (!pointerHasText.get(el)) {
+        let p = el.parentElement;
+        let hasPointerAncestor = false;
+        while (p) {
+          if (pointer.has(p)) { hasPointerAncestor = true; break; }
+          p = p.parentElement;
+        }
+        if (hasPointerAncestor) continue;
+      }
+      result.add(el);
     }
     return Array.from(result);
   }
 
   function extractElements() {
     const all = collectElements();
-    // 按视口位置排序（先上后下、先左后右），再截断到上限
+    // 按"离视口的距离"排序（视口内最优先），再按文档位置。旧实现按全局 top 排序，
+    // 长导航/头部链接多的页面会把视口内可见控件挤出截断线——用户看得见、清单没有。
+    const vh = window.innerHeight;
+    const distToViewport = (r) => (r.bottom < 0 ? -r.bottom : r.top > vh ? r.top - vh : 0);
     all.sort((a, b) => {
       const ra = a.getBoundingClientRect();
       const rb = b.getBoundingClientRect();
-      return ra.top - rb.top || ra.left - rb.left;
+      return distToViewport(ra) - distToViewport(rb) || ra.top - rb.top || ra.left - rb.left;
     });
+    const total = all.length;
     currentElements = all.slice(0, MAX_ELEMENTS);
     const lines = currentElements.map((el, i) => describeElement(el, i + 1));
+    if (total > currentElements.length) {
+      // 截断必须显式告知：否则模型在正文里看到链接文字却找不到编号，会误判"没有可点击对象"
+      lines.push(
+        `…（共匹配 ${total} 个可交互元素，已按视口就近显示前 ${currentElements.length} 个；scroll 后可看到更多）`
+      );
+    }
+    // deepInnerText 补 shadow DOM 文本（body.innerText 取不到 web component 里的可见文字）
+    const fullText = deepInnerText(document.body)
+      .replace(/\n\s*\n+/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+    const pageText =
+      fullText.length > MAX_PAGE_TEXT
+        ? fullText.slice(0, MAX_PAGE_TEXT) +
+          `\n…（正文共 ${fullText.length} 字，已截断；可用 read 工具读取完整内容）`
+        : fullText;
     return {
       url: location.href,
       title: document.title,
       scrollY: Math.round(window.scrollY),
-      pageText: (document.body?.innerText || '')
-        .replace(/\n\s*\n+/g, '\n')
-        .replace(/[ \t]+/g, ' ')
-        .trim()
-        .slice(0, MAX_PAGE_TEXT),
+      pageText,
       count: currentElements.length,
+      total,
       text: lines.join('\n'),
     };
   }

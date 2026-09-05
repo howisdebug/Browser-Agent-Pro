@@ -46,6 +46,8 @@ export const SYSTEM_PROMPT = `你是一个通过对话与用户协作的浏览�
 [编号] <标签> "文本" 附加属性
 - 文本截断到 30 字左右；无可见文本的元素用 class 名兜底，显示为 "(class名)"，可据此判断用途
 - 附加属性可能含 placeholder / href / type
+- 清单按离视口距离排序（视口内优先）；若末尾提示还有更多元素未显示，说明目标可能在清单外——scroll 后你会得到新的观察，覆盖更大范围
+- 正文里看到但清单里没有对应编号时，不要断言"没有可点击对象"：先 scroll 把目标带进视口附近再看新清单
 
 # 可用动作
 浏览器操作：
@@ -157,10 +159,14 @@ export function buildUserMessage({
     parts.push(`# 标签页快照（收集于任务开始/切换时，可能已变化）\n${formatTabSnapshot(tabSnapshot)}`);
   }
 
+  const listHeader =
+    obs.total && obs.total > obs.count
+      ? `元素清单（共匹配 ${obs.total} 个，按视口就近显示前 ${obs.count} 个）：`
+      : `元素清单（共 ${obs.count} 个）：`;
   parts.push(
     `# 当前页面观察\nURL: ${obs.url}\n标题: ${obs.title}\n滚动: ${obs.scrollY}px\n` +
       `页面正文：\n${obs.pageText || '（无可见正文）'}\n` +
-      `元素清单（共 ${obs.count} 个）：\n${obs.text}`
+      `${listHeader}\n${obs.text}`
   );
 
   return parts.join('\n\n');
