@@ -23,6 +23,7 @@ import {
   isRunning,
 } from './agent-loop.js';
 import { clearConversation, getArchiveList, loadArchivedConversation, deleteArchivedConversation } from './conversation.js';
+import { runConversationTests } from './conversation-test.js';
 import { initBubble, setPanelOpen, registerPetPort, getBubbleTabId } from './bubble.js';
 
 initLogLevel().then(() => logWork('info', 'sw', 'service worker 已启动'));
@@ -43,14 +44,17 @@ chrome.sidePanel
 
 // ---------- port 长连接（sidepanel 保活 SW + 事件推送） ----------
 
-let currentPort = null;
+// 多窗口各自打开侧边栏时每个面板一个 port（B9 跨窗口同步）：全部注册、全部广播，
+// 不再单 port 覆盖（旧实现第二个面板连接后第一个面板永久失联）。
+const panelPorts = new Set();
 
 addEventListener((event) => {
-  if (!currentPort) return;
-  try {
-    currentPort.postMessage(event);
-  } catch (err) {
-    console.error('事件推送失败:', err);
+  for (const port of panelPorts) {
+    try {
+      port.postMessage(event);
+    } catch {
+      panelPorts.delete(port); // 死端口顺手清掉
+    }
   }
 });
 
@@ -61,7 +65,7 @@ chrome.runtime.onConnect.addListener((port) => {
   }
   if (port.name !== 'sidepanel') return;
   logWork('info', 'sidepanel', 'side panel 端口已连接');
-  currentPort = port;
+  panelPorts.add(port);
   setPanelOpen(true); // 陪伴模式互斥：侧边栏打开时飘窗隐藏
   // 重连时回放已有事件缓冲
   for (const event of getEventLog()) {
@@ -72,8 +76,8 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   }
   port.onDisconnect.addListener(() => {
-    if (currentPort === port) currentPort = null;
-    setPanelOpen(false); // 侧边栏关闭：飘窗恢复（若任务在跑）
+    panelPorts.delete(port);
+    if (panelPorts.size === 0) setPanelOpen(false); // 全部侧边栏关闭：飘窗恢复（若任务在跑）
     logWork('warn', 'sidepanel', 'side panel 端口已断开');
   });
   port.onMessage.addListener((msg) => {
@@ -93,10 +97,16 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type === 'NEW_CONVERSATION') {
       requestStop();
       clearEventLog(); // 防止重连回放把旧对话事件灌回新对话
-      // 旧对话已随 appendMessage 实时归档，这里只需清活跃对话
-      clearConversation()
-        .then(() => emitEvent({ kind: 'conversation_cleared' }))
-        .catch((err) => logWork('error', 'conversation', '清空对话失败', { error: err.message }));
+      // B8 竞态修复：等旧 run 完全收尾（finishRun 的 appendMessage 落盘）再清对话，
+      // 否则"已停止"等收尾消息可能落在清空之后，混进新对话
+      (async () => {
+        const deadline = Date.now() + 5000;
+        while (isRunning() && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        await clearConversation(); // 旧对话已随 appendMessage 实时归档，这里只需清活跃对话
+        emitEvent({ kind: 'conversation_cleared' });
+      })().catch((err) => logWork('error', 'conversation', '清空对话失败', { error: err.message }));
       return;
     }
   });
@@ -226,6 +236,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!resp.ok) throw new Error(resp.error);
     })()
       .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  // ---------- 会话模块测试组（调试面板） ----------
+  if (msg.type === 'DEBUG_CONVERSATION_TEST') {
+    (async () => {
+      if (isRunning()) throw new Error('任务执行中，请先停止再跑会话测试');
+      return runConversationTests();
+    })()
+      .then((results) => sendResponse({ ok: true, results }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
