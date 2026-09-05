@@ -1,7 +1,9 @@
 // background/conversation.js — 对话存储
 // 活跃对话：chrome.storage.session（浏览器关闭即清）。
-// 历史归档：chrome.storage.local（长期保存，上限 ARCHIVE_MAX 条）——点"新对话"时
-// 自动归档当前对话，用户可从侧边栏历史入口重新载入续聊。
+// 历史归档：chrome.storage.local（长期保存，上限 ARCHIVE_MAX 条）——活跃对话从
+// 首条消息起即获得稳定 id，每次 appendMessage 同步 upsert 到归档（同 id 覆盖更新，
+// 不产生重复条目），与"新对话"按钮无关。用户可从侧边栏历史入口重新载入续聊，
+// 载入会带回原 id，续聊内容仍更新到同一条归档。
 // 消息可带 steps（当回合 thought/action/result 记录），供 UI 重开时渲染执行过程；
 // steps 不进 LLM 上下文（getConversationContext 只取 text）。
 
@@ -42,17 +44,27 @@ function maybeCompact(conv) {
     if (nl === -1) { digest = digest.slice(-DIGEST_MAX_CHARS); break; }
     digest = digest.slice(nl + 1);
   }
-  return { messages: conv.messages.slice(compactCount), digest };
+  return { ...conv, messages: conv.messages.slice(compactCount), digest };
+}
+
+// 活跃对话首条消息时分配稳定 id（归档 upsert 的键），保证同一段对话只对应一条历史
+function ensureConvId(conv) {
+  if (!conv.id) {
+    conv.id = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    conv.startedAt = conv.messages[0]?.ts ?? Date.now();
+  }
+  return conv;
 }
 
 // steps 可选：该消息关联的执行过程记录（thought/action/ok/detail）
 export async function appendMessage(role, text, steps = null) {
-  const conv = await loadConversation();
+  const conv = ensureConvId(await loadConversation());
   const msg = { role, text, ts: Date.now() };
   if (steps?.length) msg.steps = steps;
   conv.messages.push(msg);
   const compacted = maybeCompact(conv);
   await saveConversation(compacted);
+  await upsertArchive(compacted); // 历史归档实时同步，不依赖"新对话"动作
   return compacted;
 }
 
@@ -82,44 +94,53 @@ export async function getArchive() {
   }
 }
 
-// 新对话前调用：当前对话非空则归档。返回是否归档了内容。
-export async function archiveCurrentConversation() {
-  const conv = await loadConversation();
-  if (!conv.messages.length) return false;
+// 每次 appendMessage 后同步：按对话 id upsert（存在则覆盖并置顶，不存在则插入），
+// 因此同一段对话无论聊多少轮、是否点过"新对话"，归档里永远只有一条记录。
+async function upsertArchive(conv) {
+  if (!conv.id || !conv.messages.length || conv.archiveSuppressed) return;
   const firstUser = conv.messages.find((m) => m.role === 'user');
   const entry = {
-    id: `conv-${Date.now()}`,
+    id: conv.id,
     title: (firstUser?.text || '（无用户消息）').replace(/\s+/g, ' ').slice(0, 40),
-    startedAt: conv.messages[0].ts,
+    startedAt: conv.startedAt ?? conv.messages[0].ts,
+    updatedAt: Date.now(),
     messageCount: conv.messages.length,
     digest: conv.digest || '',
     messages: conv.messages.slice(-ARCHIVE_MESSAGES_MAX),
   };
   const archive = await getArchive();
+  const idx = archive.findIndex((c) => c.id === conv.id);
+  if (idx !== -1) archive.splice(idx, 1);
   archive.unshift(entry);
   while (archive.length > ARCHIVE_MAX) archive.pop();
   await chrome.storage.local.set({ [ARCHIVE_KEY]: archive });
-  return true;
 }
 
 // 历史列表（不含 messages 正文，供 UI 列表展示）
 export async function getArchiveList() {
   const archive = await getArchive();
-  return archive.map(({ id, title, startedAt, messageCount }) => ({
+  return archive.map(({ id, title, startedAt, updatedAt, messageCount }) => ({
     id,
     title,
     startedAt,
+    updatedAt,
     messageCount,
   }));
 }
 
-// 载入归档对话为当前活跃对话（续聊：下一轮用户消息将以它为上下文）
+// 载入归档对话为当前活跃对话（续聊：下一轮用户消息将以它为上下文）。
+// 带回原 id：续聊产生的新消息仍 upsert 到同一条归档，不会生成重复历史。
 export async function loadArchivedConversation(id) {
   const archive = await getArchive();
   const entry = archive.find((c) => c.id === id);
   if (!entry) throw new Error('历史对话不存在或已被清理');
   await chrome.storage.session.set({
-    [CONVERSATION_KEY]: { messages: entry.messages, digest: entry.digest || '' },
+    [CONVERSATION_KEY]: {
+      id: entry.id,
+      startedAt: entry.startedAt,
+      messages: entry.messages,
+      digest: entry.digest || '',
+    },
   });
   return entry;
 }
@@ -128,4 +149,10 @@ export async function deleteArchivedConversation(id) {
   const archive = await getArchive();
   const next = archive.filter((c) => c.id !== id);
   await chrome.storage.local.set({ [ARCHIVE_KEY]: next });
+  // 删的是当前活跃对话的归档：标记抑制，避免下一条消息又把它 upsert 回来
+  const conv = await loadConversation();
+  if (conv.id === id) {
+    conv.archiveSuppressed = true;
+    await saveConversation(conv);
+  }
 }

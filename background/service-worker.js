@@ -22,7 +22,7 @@ import {
   recoverInterruptedRun,
   isRunning,
 } from './agent-loop.js';
-import { clearConversation, archiveCurrentConversation, getArchiveList, loadArchivedConversation, deleteArchivedConversation } from './conversation.js';
+import { clearConversation, getArchiveList, loadArchivedConversation, deleteArchivedConversation } from './conversation.js';
 import { initBubble, setPanelOpen, registerPetPort, getBubbleTabId } from './bubble.js';
 
 initLogLevel().then(() => logWork('info', 'sw', 'service worker 已启动'));
@@ -93,9 +93,8 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type === 'NEW_CONVERSATION') {
       requestStop();
       clearEventLog(); // 防止重连回放把旧对话事件灌回新对话
-      archiveCurrentConversation() // 旧对话归档到历史（可经历史入口重新载入）
-        .catch((err) => logWork('warn', 'conversation', '归档旧对话失败', { error: err.message }))
-        .then(() => clearConversation())
+      // 旧对话已随 appendMessage 实时归档，这里只需清活跃对话
+      clearConversation()
         .then(() => emitEvent({ kind: 'conversation_cleared' }))
         .catch((err) => logWork('error', 'conversation', '清空对话失败', { error: err.message }));
       return;
