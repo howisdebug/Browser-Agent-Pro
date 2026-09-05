@@ -28,6 +28,13 @@ initLogLevel().then(() => logWork('info', 'sw', 'service worker 已启动'));
 initBubble();
 recoverInterruptedRun(); // SW 被杀/休眠重启：有中断的执行则续跑
 
+// 运行期看门狗：agent-loop 在任务运行时创建 30s 周期闹钟。
+// 闹钟事件既重置 SW 空闲计时（保活），又能在 SW 已被回收时唤醒它并恢复执行。
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== 'agent-watchdog') return;
+  recoverInterruptedRun();
+});
+
 // 点击工具栏图标直接打开 side panel（popup 会在点击页面时关闭，日志会丢）
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })

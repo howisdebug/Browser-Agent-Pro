@@ -245,6 +245,7 @@ function connect() {
   port.onMessage.addListener(renderEvent);
   port.onDisconnect.addListener(() => {
     port = null;
+    if (running) runStateEl.textContent = '连接中断，重连中…（任务在后台继续）';
     setTimeout(connect, 500); // SW 重启导致断连时自动重连
   });
 }

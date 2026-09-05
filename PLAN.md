@@ -51,8 +51,12 @@ Edge/Chrome 插件（MV3）形态的多模态浏览器自主操作 Agent：根�
 SW 休眠/被杀可恢复、仅浏览器完全关闭才清空——正好满足"只要没关浏览器就持有全部记忆"。
 已落 session 的状态：对话（conversation.js）、RunState（每步 checkpoint）、token 统计、
 事件日志缓冲。内存态仅剩无碍项（站点包缓存可重载、port 引用、AbortController）。
-已知边缘缺陷见 §7：SW 恰好死在 ask_user 等待期间时，恢复后该次回答会被忽略
-（pendingAsks 为内存 Map）。
+
+**SW 存活保证（2026-09-05 加固）**：等待型 await（ask_user 等回答、sleep、长 LLM 响应）
+不算 SW 活动，30s 空闲即被 Chrome 回收、任务死在中途。对策：运行期间创建
+`agent-watchdog` 周期闹钟（30s）——闹钟事件既重置空闲计时保活，又能在 SW 已被杀时
+唤醒并自动 `recoverInterruptedRun` 续跑；ask 挂起状态（askId/question 在 checkpoint 里）
+恢复后重新挂起等同一 askId，用户作答无缝续跑。任务结束清除闹钟。
 
 ### 3.3 每轮上下文组装（每决策轮重建 messages = [system, user]）
 
@@ -194,7 +198,7 @@ Planner/Executor 双 Agent / 多会话管理 / 执行中插话改向（仅停止
 - [ ] thought 流式渲染（决策调用 stream + 增量提取 thought）
 - [ ] 完整演示录屏
 - [ ] "乒乓球比赛信息"等更多认知示例任务回归
-- [ ] ask_user 等待期间 SW 死亡的回答恢复（pendingAsks 内存 Map → 持久化挂起状态，恢复后重挂等待）
+- [x] ~~ask_user 等待期间 SW 死亡的回答恢复~~（2026-09-05 看门狗加固时已修：checkpoint 存有 askId，恢复后重挂等待）
 
 ## 8. 已知坑（练习版实测，施工时注意）
 

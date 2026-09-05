@@ -34,6 +34,7 @@ const HISTORY_DETAIL_MAX = 300; // 动作历史里单条 detail 的截断长度
 const LOOP_WARN_AT = 3;   // 同签名动作连续 3 次：注入警告
 const LOOP_ABORT_AT = 5;  // 连续 5 次：终止并说明
 const RUN_STATE_KEY = 'runState';
+const WATCHDOG_ALARM = 'agent-watchdog'; // 运行期保活/复活闹钟（见 service-worker onAlarm）
 
 let running = false;
 let stopRequested = false;
@@ -81,8 +82,9 @@ async function clearCheckpoint() {
   }
 }
 
-// SW 重启恢复：running 中断 → 续跑；awaiting_user → 重新挂起等回答
+// SW 重启恢复：running 中断 → 续跑；awaiting_user → 重新挂起等同一 askId 的回答
 export async function recoverInterruptedRun() {
+  if (running) return; // 本实例正在健康执行（看门狗闹钟仅起保活作用）
   let stored;
   try {
     stored = await chrome.storage.session.get(RUN_STATE_KEY);
@@ -97,12 +99,35 @@ export async function recoverInterruptedRun() {
     status: saved.status,
   });
   run = saved;
-  run.status = 'running';
-  run.pendingAsk = null; // 等待中的提问由侧边栏经 GET_STATE 重渲染，用户重新作答
   running = true;
   stopRequested = false;
   currentAbort = new AbortController();
-  emitEvent({ kind: 'notice', text: '检测到上次执行被中断，正在恢复…' });
+  emitEvent({ kind: 'notice', text: '连接已恢复，任务继续执行…' });
+
+  if (saved.status === 'awaiting_user' && saved.pendingAsk) {
+    // 重新挂起等待同一 askId：侧边栏经 GET_STATE 重渲染提问框，用户作答后续跑
+    const { askId, question } = saved.pendingAsk;
+    emitEvent({ kind: 'ask', askId, question });
+    const answer = await waitForAskAnswer(askId);
+    if (answer === null || stopRequested) {
+      await finishRun('stopped', '好的，已停止执行。有什么需要调整的吗？');
+      return;
+    }
+    run.status = 'running';
+    run.pendingAsk = null;
+    await appendMessage('user', answer);
+    emitEvent({ kind: 'user_message', text: answer });
+    run.history.push({
+      step: run.step,
+      action: { type: 'ask_user', question },
+      ok: true,
+      detail: `用户回答：${answer.slice(0, 200)}`,
+    });
+    await checkpoint();
+  }
+
+  run.status = 'running';
+  run.pendingAsk = null;
   runLoop().catch((err) => {
     logWork('error', 'run.recover', '恢复执行失败', { error: err.message });
     finishRun('error', `恢复执行失败: ${err.message}`);
@@ -219,6 +244,7 @@ async function finishRun(status, agentText) {
   }
   emitEvent({ kind: 'run_end', status, step: run?.step ?? 0 });
   finishBubble(bubbleTabId, status === 'error' ? 'failed' : status);
+  chrome.alarms.clear(WATCHDOG_ALARM).catch(() => {});
   running = false;
   stopRequested = false;
   currentAbort = null;
@@ -242,6 +268,8 @@ function waitForAskAnswer(askId) {
 async function runLoop() {
   let tab = await getActiveWebTab(run.tabId);
   run.tabId = tab.id;
+  // 看门狗：运行期每 30s 触发，保活 SW；SW 若仍被杀，闹钟事件会唤醒并恢复执行
+  chrome.alarms.create(WATCHDOG_ALARM, { periodInMinutes: 0.5 }).catch(() => {});
   let tabSnapshot = await collectTabSnapshot();
   let obs = await observeOrExplain(tab);
   emitEvent({ kind: 'run_start', runId: run.runId });
