@@ -553,11 +553,11 @@ document.getElementById('utProbe').addEventListener('click', async () => {
 });
 
 // ---------- 会话模块测试组 ----------
-// 用例：新对话 / 多轮累积 / 压缩触发 / SW 重启后恢复 / 跨窗口同步。
+// 用例：新对话 / 多轮累积 / 压缩触发 / SW 重启后恢复 / 跨窗口同步 / 后台任务写入隔离。
 // SW 侧在真实 storage 上执行，跑前备份、跑完恢复，不留痕迹；任务运行中会被拒绝。
 document.getElementById('utConvTest').addEventListener('click', async () => {
   try {
-    debugLine('→ 会话测试组开始（5 个用例）…');
+    debugLine('→ 会话测试组开始…');
     const { results } = await sendDebug({ type: 'DEBUG_CONVERSATION_TEST' });
     for (const r of results) {
       debugLine(r.pass ? `✓ ${r.name}` : `✗ ${r.name}: ${r.error}`);

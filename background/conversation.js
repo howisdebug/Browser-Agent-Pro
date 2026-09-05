@@ -110,10 +110,73 @@ export async function appendMessage(role, text, steps = null) {
   });
 }
 
+export async function getActiveConversationId() {
+  const conv = await loadConversation();
+  return conv?.id ?? null;
+}
+
+async function loadConversationById(convId) {
+  const active = await loadConversation();
+  if (active?.id === convId) return active;
+  const archive = await getArchive();
+  const entry = archive.find((c) => c.id === convId);
+  return entry
+    ? { id: entry.id, title: entry.title, startedAt: entry.startedAt, messages: entry.messages }
+    : null;
+}
+
+// 供执行中的 run 定向写入其所属对话（run.convId 在启动时绑定）：
+// - 所属对话仍活跃：等同 appendMessage；
+// - 用户在任务执行中开了新对话（所属对话已非活跃）：写入归档中的对应条目，
+//   旧任务的输出不会混入新对话，也不会因"新对话"动作丢失。
+export async function appendMessageTo(convId, role, text, steps = null) {
+  if (!convId) return appendMessage(role, text, steps);
+  return enqueueWrite(async () => {
+    const msg = { role, text, ts: Date.now() };
+    if (steps?.length) msg.steps = steps;
+    const active = await loadConversation();
+    if (active?.id === convId) {
+      active.messages.push(msg);
+      if (!active.title && role === 'user') active.title = deriveTitle(active.messages);
+      await chrome.storage.session.set({ [CONVERSATION_KEY]: active });
+      await upsertArchive(active);
+      return active;
+    }
+    const archive = await getArchive();
+    let entry = archive.find((c) => c.id === convId);
+    if (!entry) {
+      // 极端情况：用户删除了该后台任务的对话——重建条目兜底，不丢任务输出
+      entry = {
+        id: convId,
+        title: '（后台任务，原对话已删除）',
+        startedAt: msg.ts,
+        updatedAt: msg.ts,
+        messageCount: 0,
+        messages: [],
+      };
+      archive.unshift(entry);
+    }
+    entry.messages.push(msg);
+    entry.messages = entry.messages.slice(-ARCHIVE_MESSAGES_MAX);
+    entry.messageCount = entry.messages.length;
+    entry.updatedAt = msg.ts;
+    const idx = archive.indexOf(entry);
+    if (idx > 0) {
+      archive.splice(idx, 1);
+      archive.unshift(entry);
+    }
+    while (archive.length > ARCHIVE_MAX) archive.pop();
+    await setArchiveWithFallback(archive);
+    return entry;
+  });
+}
+
 // 上下文组装用：digest（旧消息规则压缩，现场计算）+ recent（最近消息原文）。
 // 纯函数视图：存储层永远保存全量原文（B5/B6）。
-export async function getConversationContext() {
-  const conv = await loadConversation();
+// convId 为空读活跃对话；执行中的 run 传 run.convId 读自己所属的对话——
+// 用户在任务执行中开了新对话时，run 的上下文不被新对话污染。
+export async function getConversationContext(convId = null) {
+  const conv = convId ? await loadConversationById(convId) : await loadConversation();
   const messages = conv?.messages || [];
   const recent = messages.slice(-MAX_VERBATIM);
   if (messages.length <= MAX_VERBATIM) return { digest: '', recent };

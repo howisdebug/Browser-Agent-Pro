@@ -20,6 +20,8 @@ import {
 import { executeBrowserAction } from './actions.js';
 import {
   appendMessage,
+  appendMessageTo,
+  getActiveConversationId,
   getConversationContext,
   getAllMessages,
 } from './conversation.js';
@@ -115,7 +117,7 @@ export async function recoverInterruptedRun() {
     }
     run.status = 'running';
     run.pendingAsk = null;
-    await appendMessage('user', answer);
+    await appendMessageTo(run.convId, 'user', answer);
     emitEvent({ kind: 'user_message', text: answer });
     run.history.push({
       step: run.step,
@@ -155,6 +157,9 @@ export async function handleUserMessage(text) {
   emitEvent({ kind: 'user_message', text });
   run = {
     runId: `run-${Date.now()}`,
+    // 绑定所属对话：任务执行中用户开新对话时，本 run 的输出与上下文仍定向
+    // 到发起它的对话（写归档对应条目），不混入新对话、也不被新对话污染
+    convId: await getActiveConversationId(),
     status: 'running',
     step: 0,
     history: [],
@@ -248,7 +253,7 @@ async function finishRun(status, agentText) {
           detail: h.detail,
         }))
       : null;
-    await appendMessage('agent', agentText, steps);
+    await appendMessageTo(run?.convId, 'agent', agentText, steps);
     emitEvent({ kind: 'agent_message', text: agentText, status });
   }
   emitEvent({ kind: 'run_end', status, step: run?.step ?? 0 });
@@ -298,7 +303,7 @@ async function runLoop() {
     const lastRead = run.lastRead;
     run.lastRead = null;
 
-    const convCtx = await getConversationContext();
+    const convCtx = await getConversationContext(run.convId);
     const userMessage = buildUserMessage({
       digest: convCtx.digest,
       recent: convCtx.recent,
@@ -361,7 +366,7 @@ async function runLoop() {
       }
       run.status = 'running';
       run.pendingAsk = null;
-      await appendMessage('user', answer);
+      await appendMessageTo(run.convId, 'user', answer);
       emitEvent({ kind: 'user_message', text: answer });
       run.history.push({ step: run.step, action, ok: true, detail: `用户回答：${answer.slice(0, 200)}`, thought: parsed.thought });
       await checkpoint();
@@ -377,7 +382,7 @@ async function runLoop() {
       }
       run.plan = steps;
       const planText = `计划：\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n开始执行，如需调整请随时叫停。`;
-      await appendMessage('agent', planText);
+      await appendMessageTo(run.convId, 'agent', planText);
       emitEvent({ kind: 'agent_message', text: planText, status: 'plan' });
       run.history.push({ step: run.step, action, ok: true, detail: `已输出 ${steps.length} 步计划`, thought: parsed.thought });
       await checkpoint();

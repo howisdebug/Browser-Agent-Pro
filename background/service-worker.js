@@ -95,18 +95,21 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
     if (msg.type === 'NEW_CONVERSATION') {
-      requestStop();
+      // 不停止在途任务：run 已绑定所属对话（convId），其后续输出写入归档中
+      // 自己的条目，不会混进新对话；用户可随时从历史面板回到原对话查看结果
+      const wasRunning = isRunning();
       clearEventLog(); // 防止重连回放把旧对话事件灌回新对话
-      // B8 竞态修复：等旧 run 完全收尾（finishRun 的 appendMessage 落盘）再清对话，
-      // 否则"已停止"等收尾消息可能落在清空之后，混进新对话
-      (async () => {
-        const deadline = Date.now() + 5000;
-        while (isRunning() && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        await clearConversation(); // 旧对话已随 appendMessage 实时归档，这里只需清活跃对话
-        emitEvent({ kind: 'conversation_cleared' });
-      })().catch((err) => logWork('error', 'conversation', '清空对话失败', { error: err.message }));
+      clearConversation() // 旧对话已随 appendMessage 实时归档，这里只需清活跃对话
+        .then(() => {
+          emitEvent({ kind: 'conversation_cleared' });
+          if (wasRunning) {
+            emitEvent({
+              kind: 'notice',
+              text: '已开始新对话。之前的任务仍在后台继续执行，完成后结果保存在原对话中（🕘 历史面板可查看）。',
+            });
+          }
+        })
+        .catch((err) => logWork('error', 'conversation', '清空对话失败', { error: err.message }));
       return;
     }
   });

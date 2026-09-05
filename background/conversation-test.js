@@ -5,6 +5,8 @@
 
 import {
   appendMessage,
+  appendMessageTo,
+  getActiveConversationId,
   getAllMessages,
   getConversationContext,
   clearConversation,
@@ -140,7 +142,31 @@ const TESTS = [
   ['压缩触发', testCompaction],
   ['SW重启后恢复', testPersistenceAcrossSwRestart],
   ['跨窗口同步', testCrossWindowSync],
+  ['后台任务写入隔离', testBackgroundRunIsolation],
 ];
+
+// ---------- 用例 6：后台任务写入隔离 ----------
+// 任务执行中开新对话（clearConversation 模拟）：run 定向写入（appendMessageTo）
+// 必须落在原对话的归档条目里，新对话一条不多；run 的上下文也不被新对话污染
+async function testBackgroundRunIsolation() {
+  await wipe();
+  await appendMessage('user', '后台任务的对话');
+  const runConvId = await getActiveConversationId();
+  assert(runConvId, '应能取到活跃对话 id');
+  await clearConversation(); // 模拟任务执行中点了"新对话"
+  await appendMessage('user', '新对话的消息');
+  await appendMessageTo(runConvId, 'agent', '后台任务的最终汇报');
+  const activeMsgs = await getAllMessages();
+  assert(activeMsgs.length === 1 && activeMsgs[0].text === '新对话的消息',
+    `新对话不应混入后台输出，实际 ${activeMsgs.length} 条`);
+  const list = await getArchiveList();
+  const bg = list.find((c) => c.id === runConvId);
+  assert(bg, '后台对话应存在于归档');
+  assert(bg.messageCount === 2, `后台对话应有 2 条消息，实际 ${bg.messageCount}`);
+  const bgCtx = await getConversationContext(runConvId);
+  assert(bgCtx.recent.at(-1).text === '后台任务的最终汇报', 'run 的上下文应包含其定向写入的消息');
+  assert(!bgCtx.recent.some((m) => m.text === '新对话的消息'), 'run 的上下文不应被新对话污染');
+}
 
 export async function runConversationTests() {
   // 备份真实数据，finally 整体恢复
